@@ -6,6 +6,8 @@ import re
 import boto3
 import sys
 
+from botocore.exceptions import ClientError
+
 
 def get_config_file_path():
     home_dir = os.path.expanduser("~")
@@ -162,6 +164,56 @@ def upload_photos(album, photos_dir):
 
     print("Upload completed successfully.")
 
+def download_photos(album, download_dir):
+    check_config_file()
+
+    config_file = get_config_file_path()
+    config = configparser.ConfigParser()
+    config.read(config_file)
+
+    bucket = config['DEFAULT'].get('bucket')
+    if not bucket:
+        print("Bucket name is not defined in the configuration file.")
+        sys.exit(1)
+
+    s3 = boto3.client('s3',
+                      endpoint_url='https://storage.yandexcloud.net',
+                      aws_access_key_id=config['DEFAULT']['aws_access_key_id'],
+                      aws_secret_access_key=config['DEFAULT']['aws_secret_access_key'])
+
+    # Проверяем наличие фотоальбома
+    response = s3.list_objects(Bucket=bucket, Prefix=f"{album}/")
+    if 'Contents' not in response:
+        print(f"Album {album} does not exist in the bucket.")
+        sys.exit(1)
+
+    # Скачиваем фотографии
+    if not os.path.exists(download_dir):
+        os.makedirs(download_dir)
+
+    photos_downloaded = False
+    for item in response['Contents']:
+        file_key = item['Key']
+        if file_key.endswith('/'):
+            continue  # Пропускаем ключи, являющиеся папками
+        file_name = file_key.split('/')[-1]
+
+        if re.search(r"\.(jpe?g)$", file_name, re.IGNORECASE):
+            try:
+                file_path = os.path.join(download_dir, file_name)
+                with open(file_path, 'wb') as f:
+                    s3.download_fileobj(bucket, file_key, f)
+                photos_downloaded = True
+            except ClientError:
+                print(f"Warning: Photo not downloaded {file_name}")
+        else:
+            print(f"Warning: Invalid file format {file_name}")
+
+    if not photos_downloaded:
+        print(f"Warning: No valid photos found in album {album}")
+        sys.exit(1)
+
+    print("Download completed successfully.")
 
 def delete_album(album):
     check_config_file()
@@ -325,7 +377,7 @@ def generate_and_publish_website():
         album_number += 1
 
     print("Website generation and publishing completed.")
-    print("https://itiscl-spr23-22-cloudphoto-test.website.yandexcloud.net")
+    print("https://vvo12-guzaerov-cloudphoto.website.yandexcloud.net")
 
 
 def generate_html_for_album(photos):
@@ -421,6 +473,11 @@ def main():
     upload_parser.add_argument('--album', required=True, help='Album name')
     upload_parser.add_argument('--path', default='.', help='Photos directory')
 
+    # Команда download
+    upload_parser = subparsers.add_parser('download', help='Download photos')
+    upload_parser.add_argument('--album', required=True, help='Album name')
+    upload_parser.add_argument('--path', default='.', help='Photos directory')
+
     # Команда delete
     delete_parser = subparsers.add_parser('delete', help='Delete album')
     delete_parser.add_argument('album', help='Album name')
@@ -444,6 +501,13 @@ def main():
             album = args.album
             photos_dir = args.path if args.path else "."
             upload_photos(album, photos_dir)
+        else:
+            parser.print_help()
+    elif args.command == 'download':
+        if args.album:
+            album = args.album
+            photos_dir = args.path if args.path else "."
+            download_photos(album, photos_dir)
         else:
             parser.print_help()
     elif args.command == 'delete':
