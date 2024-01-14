@@ -377,8 +377,9 @@ def generate_and_publish_website():
         album_number += 1
 
     print("Website generation and publishing completed.")
-    print("https://vvo12-guzaerov-cloudphoto.website.yandexcloud.net")
-
+    endpoint_url = 'website.yandexcloud.net'
+    website_uri = f'https://{bucket_name}.{endpoint_url}/'
+    print(website_uri)
 
 def generate_html_for_album(photos):
     html_template = """
